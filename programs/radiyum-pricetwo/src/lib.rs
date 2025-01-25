@@ -1,33 +1,40 @@
-use anchor_lang::prelude::*;
 use anchor_lang::prelude::ProgramError;
+use anchor_lang::prelude::*;
 use borsh::BorshDeserialize;
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
-use anchor_spl::token::{ self, Token, TokenAccount, Transfer as SplTransfer };
-use bytemuck::{from_bytes, from_bytes_mut, Pod, Zeroable};
-use uint::construct_uint;
+use anchor_spl::token::{self, Token, TokenAccount, Transfer as SplTransfer};
+use bytemuck::{from_bytes, from_bytes_mut, Contiguous, Pod, Zeroable};
+use primitive_types_solana::U128;
+use primitive_types_solana::U256;
+use serum_dex::{
+    matching::Side,
+    state::{EventView, MarketState, OpenOrders, ToAlignedBytes},
+};
+//use uint::construct_uint;
 // use crate::math::{
 //         Calculator, CheckedCeilDiv, InvariantPool, InvariantToken, RoundDirection, SwapDirection,
 //         U128, U256,
 //     };
 
-#[repr(C)]
-    pub struct U256(pub [u64; 4]);
-
 pub const MAX_ORDER_LIMIT: usize = 10;
 
-declare_id!("DryKdo3RD87wP9BKZybHjuvFVcUB6qmXncj8CpgLUfvb");
+declare_id!("BZp8DhzDFGHZ5gVj7Hv1yexSXYT839h1mrLAqLKmd7Wo");
 
 #[program]
 pub mod radiyum_pricetwo {
+    use anchor_spl::token_interface::spl_token_metadata_interface::borsh::de;
+    use solana_program::native_token::LAMPORTS_PER_SOL;
+
     use super::*;
 
     pub fn fetch(ctx: Context<DepositDemo>) -> Result<()> {
-
-        msg!("2 Account data length: {}", ctx.accounts.amm_info.data_len());
-        msg!("Expected size: {}", std::mem::size_of::<AmmInfo>());
-
+        // msg!(
+        //     "2 Account data length: {}",
+        //     ctx.accounts.amm_info.data_len()
+        // );
+        // msg!("Expected size: {}", std::mem::size_of::<AmmInfo>());
 
         let amm = &mut AmmInfo::try_from(&ctx.accounts.amm_info).unwrap();
         let amm_coin_vault = ctx.accounts.amm_coin_vault.clone();
@@ -41,25 +48,32 @@ pub mod radiyum_pricetwo {
             *bytemuck::from_bytes::<TargetOrders>(&data)
         };
 
-       // msg!(&format!("coin decimals {}", amm.coin_decimals));
+        // msg!(&format!("coin decimals {}", amm.coin_decimals));
 
         msg!(&format!("pc decimals {}", amm.pc_decimals));
 
-        msg!(&format!("u128 value: {}", target_orders_data.calc_pnl_x));
+       // msg!(&format!("u128 value: {}", target_orders_data.calc_pnl_x));
 
-
-
-        let mut total_pc_without_take_pnl : u64; 
+        let mut total_pc_without_take_pnl: u64;
         let mut total_coin_without_take_pnl: u64;
-        (total_pc_without_take_pnl, total_coin_without_take_pnl) = calc_total_without_take_pnl_no_orderbook(amm_pc_vault.amount, amm_coin_vault.amount, &amm).unwrap();
+        (total_pc_without_take_pnl, total_coin_without_take_pnl) =
+            calc_total_without_take_pnl_no_orderbook(
+                amm_pc_vault.amount,
+                amm_coin_vault.amount,
+                &amm,
+            )
+            .unwrap();
 
-        msg!("total_pc_without_take_pnl is {}",total_pc_without_take_pnl);
+        msg!("total_pc_without_take_pnl is {}", total_pc_without_take_pnl);
 
-        msg!("total_pc_without_take_pnl is {}",total_coin_without_take_pnl);
+        msg!(
+            "total_coin_without_take_pnl is {}",
+            total_coin_without_take_pnl
+        );
 
-         msg!("pc_total is {}",amm_pc_vault.amount);
+        msg!("pc_total is {}", amm_pc_vault.amount);
 
-        msg!("coin_total is {}",amm_coin_vault.amount);
+        msg!("coin_total is {}", amm_coin_vault.amount);
         let x = normalize_decimal_v2(
             amm_pc_vault.amount as u128,
             amm.pc_decimals as u32,
@@ -72,7 +86,7 @@ pub mod radiyum_pricetwo {
         );
         msg!(&format!("x value: {}", x));
         msg!(&format!("y value: {}", y));
-        let (pc_total, coin_total) = calc_take_pnl(
+        let (pc_total, coin_total,delta_x,delta_y,pc_pnl,coin_pnl) = calc_take_pnl(
             &target_orders_data,
             amm,
             &mut total_pc_without_take_pnl,
@@ -81,22 +95,40 @@ pub mod radiyum_pricetwo {
             y.into(),
         )?;
 
-        msg!("pc_total is {}",pc_total);
+        msg!("pc_total is {}", pc_total);
 
-        msg!("coin_total is {}",coin_total);
+        msg!("coin_total is {}", coin_total);
 
-        let price =  coin_total as f64/pc_total as f64;
+        // msg!("delta x is {}", delta_x);
+
+        // msg!("delta_y is {}", delta_y);
+
+        let price = U128::from(LAMPORTS_PER_SOL)
+                .checked_mul(pc_total.into())
+                .unwrap()
+                .checked_div(coin_total.into())
+                .unwrap();
 
 
 
+        //let price_updated = price.checked_div(1000);
 
+       // let price = pc_total as f64/coin_total as f64;
 
-        msg!("Price is {}",price);
+        msg!("Price is {}", price);
+        
+        msg!("Price after adding pcpnl is {}", price+pc_pnl);
+
+        let price_changed = U128::from(LAMPORTS_PER_SOL - coin_pnl)
+                .checked_mul(pc_total.into())
+                .unwrap()
+                .checked_div(coin_total.into())
+                .unwrap();
+        msg!("Price after adding coinpnl is {}", price_changed);
+        msg!("Price after adding coinpnl and pcpnl is {}", price_changed+pc_pnl);
 
         Ok(())
     }
-
-
 }
 
 pub fn calc_total_without_take_pnl_no_orderbook<'a>(
@@ -113,8 +145,6 @@ pub fn calc_total_without_take_pnl_no_orderbook<'a>(
     Ok((total_pc_without_take_pnl, total_coin_without_take_pnl))
 }
 
-
-
 pub fn normalize_decimal_v2(val: u128, native_decimal: u32, sys_decimal_value: u64) -> u128 {
     let ret_mut = val.checked_mul(sys_decimal_value.into()).unwrap();
     let ret = ret_mut.checked_div((10u128).pow(native_decimal)).unwrap();
@@ -126,86 +156,114 @@ pub fn calc_take_pnl(
     amm: &mut AmmInfo,
     total_pc_without_take_pnl: &mut u64,
     total_coin_without_take_pnl: &mut u64,
-    x1: u128,
-    y1:u128
-) -> Result<(u64, u64)>  {
-    let calc_pc_amount = restore_decimal(target.calc_pnl_x, amm.pc_decimals, amm.sys_decimal_value);
-    let calc_coin_amount = restore_decimal(target.calc_pnl_y, amm.coin_decimals, amm.sys_decimal_value);
+    x1: U256,
+    y1: U256,
+) -> Result<(u64, u64,u128,u128,u64,u64)> {
+    let calc_pc_amount = restore_decimal(
+        target.calc_pnl_x.into(),
+        amm.pc_decimals,
+        amm.sys_decimal_value,
+    );
+    let calc_coin_amount = restore_decimal(
+        target.calc_pnl_y.into(),
+        amm.coin_decimals,
+        amm.sys_decimal_value,
+    );
 
-    let pool_pc_amount = *total_pc_without_take_pnl as u128;
-    let pool_coin_amount = *total_coin_without_take_pnl as u128;
+    let pool_pc_amount = U128::from(*total_pc_without_take_pnl);
+    let pool_coin_amount = U128::from(*total_coin_without_take_pnl);
+    let mut delta_x : u128 = 0;
+    let mut delta_y: u128 = 0;
+    let mut pc_pnl_amount:u64 = 0;
+    let mut coin_pnl_amount = 0;
 
-    if pool_pc_amount.checked_mul(pool_coin_amount).unwrap() >= calc_pc_amount.checked_mul(calc_coin_amount).unwrap() {
-        msg!(&format!("last checked value x: {}",target.calc_pnl_x ));
-        msg!(&format!("last checked value y: {}",target.calc_pnl_y ));
-        
-        let x2_power = calc_x_power(target.calc_pnl_x, target.calc_pnl_y, x1, y1);
-        let x2 = integer_sqrt(x2_power);
+    if pool_pc_amount.checked_mul(pool_coin_amount).unwrap()
+        >= calc_pc_amount.checked_mul(calc_coin_amount).unwrap()
+    {
+        msg!(&format!("last checked value x: {}", target.calc_pnl_x));
+        msg!(&format!("last checked value y: {}", target.calc_pnl_y));
+
+        let x2_power = calc_x_power(target.calc_pnl_x.into(), target.calc_pnl_y.into(), x1, y1);
+        let x2 = x2_power.integer_sqrt();
         let y2 = x2.checked_mul(y1).unwrap().checked_div(x1).unwrap();
 
-        let diff_x = x1.checked_sub(x2).unwrap();
-        let diff_y = y1.checked_sub(y2).unwrap();
+        let diff_x = U128::from(x1.checked_sub(x2).unwrap().as_u128());
+        let diff_y = U128::from(y1.checked_sub(y2).unwrap().as_u128());
 
-        let pc_pnl_amount = restore_decimal(diff_x, amm.pc_decimals, amm.sys_decimal_value) as u64;
-        let coin_pnl_amount = restore_decimal(diff_y, amm.coin_decimals, amm.sys_decimal_value) as u64;
+         delta_x = diff_x
+        .checked_mul(amm.fees.pnl_numerator.into())
+        .unwrap()
+        .checked_div(amm.fees.pnl_denominator.into())
+        .unwrap()
+        .as_u128();
+     delta_y = diff_y
+        .checked_mul(amm.fees.pnl_numerator.into())
+        .unwrap()
+        .checked_div(amm.fees.pnl_denominator.into())
+        .unwrap()
+        .as_u128();
 
+        let diff_pc_pnl_amount = restore_decimal(diff_x, amm.pc_decimals, amm.sys_decimal_value);
+        let diff_coin_pnl_amount =
+            restore_decimal(diff_y, amm.coin_decimals, amm.sys_decimal_value);
+
+        pc_pnl_amount = diff_pc_pnl_amount
+            .checked_mul(amm.fees.pnl_numerator.into())
+            .unwrap()
+            .checked_div(amm.fees.pnl_denominator.into())
+            .unwrap()
+            .as_u64();
+        coin_pnl_amount = diff_coin_pnl_amount
+            .checked_mul(amm.fees.pnl_numerator.into())
+            .unwrap()
+            .checked_div(amm.fees.pnl_denominator.into())
+            .unwrap()
+            .as_u64();
         if pc_pnl_amount != 0 && coin_pnl_amount != 0 {
-            amm.state_data.need_take_pnl_pc = amm.state_data.need_take_pnl_pc.checked_add(pc_pnl_amount).unwrap();
-            amm.state_data.need_take_pnl_coin = amm.state_data.need_take_pnl_coin.checked_add(coin_pnl_amount).unwrap();
 
-            *total_pc_without_take_pnl = total_pc_without_take_pnl.checked_sub(pc_pnl_amount).unwrap();
-            *total_coin_without_take_pnl = total_coin_without_take_pnl.checked_sub(coin_pnl_amount).unwrap();
+            *total_pc_without_take_pnl = total_pc_without_take_pnl
+                .checked_sub(pc_pnl_amount)
+                .unwrap();
+            *total_coin_without_take_pnl = total_coin_without_take_pnl
+                .checked_sub(coin_pnl_amount)
+                .unwrap();
         }
     }
 
-    Ok((*total_pc_without_take_pnl, *total_coin_without_take_pnl))
+    Ok((*total_pc_without_take_pnl, *total_coin_without_take_pnl,delta_x,delta_y,pc_pnl_amount,coin_pnl_amount))
 }
 
-
-
-pub fn restore_decimal(val: u128, native_decimal: u64, sys_decimal_value: u64) -> u128 {
-    val.checked_mul((10u128).pow(native_decimal as u32)).unwrap().checked_div(sys_decimal_value.into()).unwrap()
+pub fn restore_decimal(val: U128, native_decimal: u64, sys_decimal_value: u64) -> U128 {
+    let ret_mut = val
+        .checked_mul(U128::from(10).checked_pow(native_decimal.into()).unwrap())
+        .unwrap();
+    let ret = ret_mut.checked_div(sys_decimal_value.into()).unwrap();
+    ret
 }
 
-pub fn calc_x_power(last_x: u128, last_y: u128, current_x: u128, current_y: u128) -> u128 {
+pub fn calc_x_power(last_x: U256, last_y: U256, current_x: U256, current_y: U256) -> U256 {
     // let reduced_y = (last_y as f64) / (current_y as f64);
-
-
-
 
     // // Convert back to a scaled integer with moderate scaling to avoid overflow
     // let scaled_reduced_y = (reduced_y * 1_000.0).round() as u128; // Use smaller scaling factor
 
     // // Perform calculations
     // let intermediate = last_x * scaled_reduced_y; // Intermediate result
-    // let result = (intermediate  * current_x)/1000; 
+    // let result = (intermediate  * current_x)/1000;
     // return result;
 
-    //last_x.checked_mul(last_y).unwrap().checked_div(current_y).unwrap().checked_mul(current_x).unwrap()
+    last_x
+        .checked_mul(last_y)
+        .unwrap()
+        .checked_div(current_y)
+        .unwrap()
+        .checked_mul(current_x)
+        .unwrap()
 
-    last_x.checked_mul(last_y).unwrap().checked_mul(current_x).unwrap().checked_div(current_y).unwrap()
+    //last_x*last_y*current_x/current_y;
 }
 
-pub fn integer_sqrt(x:u128) -> u128 {
-    let one = 1;
-    if x <= one {
-        return x;
-    }
 
-    // the implementation is based on:
-    // https://en.wikipedia.org/wiki/Integer_square_root#Using_only_integer_division
-
-    // Set the initial guess to something higher than √self.
-    let shift: u32 = ((x as u32)+ 1) / 2;
-    let mut x_prev = one.wrapping_shl( shift);
-    loop {
-        let x = (x_prev + x / x_prev) >> 1;
-        if x >= x_prev {
-            return x_prev;
-        }
-        x_prev = x;
-    }
-}
 
 #[derive(Accounts)]
 pub struct Initialize {}
@@ -232,12 +290,11 @@ unsafe impl Zeroable for TargetOrderArray {}
 #[cfg(target_endian = "little")]
 unsafe impl Pod for TargetOrderArray {}
 
-
 #[repr(C)]
-#[derive(Clone, Copy,Pod,Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct TargetOrders {
     pub owner: [u64; 4],
-    pub buy_orders:  TargetOrderArray,
+    pub buy_orders: TargetOrderArray,
     pub padding1: [u64; 8],
     pub target_x: u128,
     pub target_y: u128,
@@ -296,7 +353,7 @@ impl Default for TargetOrders {
     }
 }
 #[repr(C)]
-#[derive(Clone, Debug,Copy, Default, PartialEq, Pod, Zeroable)]
+#[derive(Clone, Debug, Copy, Default, PartialEq, Pod, Zeroable)]
 pub struct AmmInfo {
     /// Initialized status.
     pub status: u64,
@@ -369,7 +426,7 @@ pub struct AmmInfo {
     /// padding
     pub padding2: u64,
 
-    pub padding3: [u8; 16]
+    pub padding3: [u8; 16],
 }
 
 impl<'info> From<&AccountInfo<'info>> for AmmInfo {
@@ -387,7 +444,7 @@ impl<'info> From<&AccountInfo<'info>> for TargetOrders {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug,Copy, Default, PartialEq, Pod, Zeroable)]
+#[derive(Clone, Debug, Copy, Default, PartialEq, Pod, Zeroable)]
 pub struct Fees {
     /// numerator of the min_separate
     pub min_separate_numerator: u64,
@@ -408,8 +465,6 @@ pub struct Fees {
     /// numerator of the swap_fee
     pub swap_fee_numerator: u64,
     /// denominator of the swap_fee
-   
-   
     pub swap_fee_denominator: u64,
 }
 
@@ -443,29 +498,22 @@ pub struct StateData {
     pub padding: [u8; 16],
 }
 
-
-
 #[derive(Accounts)]
-pub struct DepositDemo<'info>{
-
+pub struct DepositDemo<'info> {
     /// CHECK: No check needed
     #[account(mut)]
     pub amm_info: AccountInfo<'info>,
-    
-    
+
     /// CHECK : No check needed
     #[account(mut)]
     pub target_orders: AccountInfo<'info>,
     ///Check : No check needed
-   
     pub amm_coin_vault: Account<'info, TokenAccount>,
     pub amm_pc_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
-     pub authority: Signer<'info>, 
+    pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
-
 }
-
 
 #[error_code]
 pub enum MyErrors {
