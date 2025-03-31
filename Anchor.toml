@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-radiyum_pricetwo = "BZp8DhzDFGHZ5gVj7Hv1yexSXYT839h1mrLAqLKmd7Wo"
+radiyum_pricetwo = "6RCDFGqR38ffYyMHLN8yNNtC5hRQDFBRUn6MC21cemCp"
 
 [registry]
 url = "https://api.apr.dev"

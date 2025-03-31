@@ -24,7 +24,3 @@ solana-program = "1.18.18"
 bytemuck = { version = "1.4.0" }
 primitive-types-solana = "0.1.0"
 uint = "0.9.5"
-serum_dex = { version = "0.5.10", git = "https://github.com/raydium-io/openbook-dex", features = [
-    "no-entrypoint",
-    "program",
-] }
