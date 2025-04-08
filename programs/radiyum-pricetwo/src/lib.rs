@@ -92,6 +92,15 @@ pub mod radiyum_pricetwo {
             discriminator,
             creator,
         )?;
+
+        let clock = Clock::get()?;
+
+        emit!(TokensCreated {
+            user: ctx.accounts.user.key(),
+            mint_a: ctx.accounts.mint_a_address.key(),
+            mint_b: ctx.accounts.mint_b_address.key(),
+            timestamp: clock.unix_timestamp,
+        });
     
         Ok(())
     }
@@ -161,14 +170,7 @@ fn create_single_token<'info>(
         ],
     )?;
 
-    let clock = Clock::get()?;
-
-    emit!(TokensCreated {
-        user: ctx.accounts.user.key(),
-        mint_a: ctx.accounts.mint_a_address.key(),
-        mint_b: ctx.accounts.mint_b_address.key(),
-        timestamp: clock.unix_timestamp,
-    });
+ 
 
     Ok(())
 }
