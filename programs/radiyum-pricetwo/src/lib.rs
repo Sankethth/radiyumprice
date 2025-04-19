@@ -17,6 +17,7 @@ pub const MAX_ORDER_LIMIT: usize = 10;
 
 declare_id!("6RCDFGqR38ffYyMHLN8yNNtC5hRQDFBRUn6MC21cemCp");
 
+const PUMP_AMM_PROGRAM_ID: &str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 #[program]
 pub mod radiyum_pricetwo {
 
@@ -35,6 +36,19 @@ pub mod radiyum_pricetwo {
         if base_coin_vault.mint != ctx.accounts.base_token.key() {
             panic!("Base coin vault is not correct");
         }
+
+        let pool_id = &mut ctx.accounts.pool_id;
+        if base_coin_vault.owner != pool_id.key() {
+            panic!("invalid pool id for base account");
+        }
+        if quote_coin_vault.owner != pool_id.key() {
+            panic!("invalid pool id for quote account");
+        }
+        
+        if pool_id.owner.to_string() != PUMP_AMM_PROGRAM_ID {
+            panic!("pool id does not belong to pump amm");
+        }  
+
 
         let base_coin_amount = base_coin_vault.amount;
 
@@ -192,6 +206,7 @@ pub struct PumpDepositDemo<'info> {
     pub base_vault: Account<'info, TokenAccount>,
     /// CHECK : No Check Needed
     pub base_token: AccountInfo<'info>,
+    pub pool_id: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 }
 
